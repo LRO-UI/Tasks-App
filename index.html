@@ -1255,9 +1255,9 @@
 
   async function loadTasks() {
     try {
-      const result = await window.storage.get(STORAGE_KEY, false);
-      if (result && result.value) {
-        tasks = JSON.parse(result.value);
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        tasks = JSON.parse(raw);
         tasks.forEach(t => {
           if (!t.createdAt) t.createdAt = Date.now();
           if (!t.list) t.list = 'today';
@@ -1269,6 +1269,7 @@
         await saveTasks();
       }
     } catch (e) {
+      console.error('Could not load tasks', e);
       tasks = seedTasks;
     }
     render();
@@ -1276,7 +1277,7 @@
 
   async function saveTasks() {
     try {
-      await window.storage.set(STORAGE_KEY, JSON.stringify(tasks), false);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
     } catch (e) {
       console.error('Could not save tasks', e);
     }
@@ -1286,18 +1287,19 @@
 
   async function loadFolders() {
     try {
-      const result = await window.storage.get(FOLDERS_KEY, false);
-      if (result && result.value) {
-        folders = JSON.parse(result.value);
+      const raw = localStorage.getItem(FOLDERS_KEY);
+      if (raw) {
+        folders = JSON.parse(raw);
       }
     } catch (e) {
+      console.error('Could not load folders', e);
       folders = [];
     }
   }
 
   async function saveFolders() {
     try {
-      await window.storage.set(FOLDERS_KEY, JSON.stringify(folders), false);
+      localStorage.setItem(FOLDERS_KEY, JSON.stringify(folders));
     } catch (e) {
       console.error('Could not save folders', e);
     }
@@ -1992,9 +1994,9 @@
 
   async function loadPrefs() {
     try {
-      const result = await window.storage.get(SETTINGS_KEY, false);
-      if (result && result.value) {
-        prefs = JSON.parse(result.value);
+      const raw = localStorage.getItem(SETTINGS_KEY);
+      if (raw) {
+        prefs = JSON.parse(raw);
       }
     } catch (e) {
       // no saved prefs yet, keep defaults
@@ -2004,7 +2006,7 @@
 
   async function savePrefs() {
     try {
-      await window.storage.set(SETTINGS_KEY, JSON.stringify(prefs), false);
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(prefs));
     } catch (e) {
       console.error('Could not save settings', e);
     }
