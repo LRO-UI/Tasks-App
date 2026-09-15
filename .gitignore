@@ -1,0 +1,7 @@
+node_modules/
+.DS_Store
+*.log
+
+# Bubblewrap-generated Android project (if you build it inside this repo)
+android/
+*.keystore
