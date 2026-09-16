@@ -264,7 +264,7 @@
   .tabs {
     display: flex;
     gap: 5vw;
-    margin-top: 1vh;
+    margin-top: calc(1vh + 24px);
   }
   .folder-tabs {
     margin-top: 0;
@@ -476,6 +476,39 @@
     margin-top: 1vh;
   }
 
+  .day-stats {
+    margin-top: 2.4vh;
+    padding-top: 2vh;
+    border-top: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    gap: 1.4vh;
+  }
+  .day-stat-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 3.4vw;
+  }
+  .day-stat-name {
+    flex: 1;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .day-stat-count {
+    flex: none;
+    margin-right: 4vw;
+    color: var(--cream);
+    font-weight: 600;
+  }
+  .day-stat-pct {
+    flex: none;
+    width: 12vw;
+    text-align: right;
+    color: var(--muted);
+  }
+
   #list {
     flex: 1;
     overflow-y: auto;
@@ -529,6 +562,10 @@
     flex: 1;
     min-width: 0;
     cursor: pointer;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
   .task .title {
     font-size: 4.4vw;
@@ -1672,9 +1709,24 @@
     const weeklyList = tasks.filter(t => t.list === 'weekly' && t.createdAt >= weekStart && t.createdAt < weekEnd);
     const todayDone = todayList.filter(t => t.done).length;
     const weekDone = weeklyList.filter(t => t.done).length;
+    const weekTotal = weeklyList.length;
+    const weekPct = weekTotal ? Math.round((weekDone / weekTotal) * 100) : 0;
     const allDone = tasks.filter(t => t.done).length;
     const allTotal = tasks.length;
     const pct = allTotal ? Math.round((allDone / allTotal) * 100) : 0;
+
+    const dayRows = weekDays.map((dayTs, i) => {
+      const dayTasks = weeklyList.filter(t => isSameDay(t.createdAt, dayTs));
+      const dayDone = dayTasks.filter(t => t.done).length;
+      const dayTotal = dayTasks.length;
+      const dayPct = dayTotal ? Math.round((dayDone / dayTotal) * 100) : 0;
+      return `
+        <div class="day-stat-row">
+          <div class="day-stat-name">${WEEKDAY_NAMES[i]}</div>
+          <div class="day-stat-count">${dayDone}/${dayTotal}</div>
+          <div class="day-stat-pct">${dayPct}%</div>
+        </div>`;
+    }).join('');
 
     const wrap = document.createElement('div');
     wrap.className = 'dashboard';
@@ -1685,14 +1737,15 @@
         <div class="stat-sub">tasks completed</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Weekly</div>
-        <div class="stat-value">${weekDone}<span class="stat-of">/${weeklyList.length}</span></div>
-        <div class="stat-sub">tasks completed</div>
-      </div>
-      <div class="stat-card wide">
         <div class="stat-label">All Time</div>
         <div class="stat-value">${allDone}<span class="stat-of">/${allTotal}</span></div>
         <div class="stat-sub">${pct}% of all tasks completed</div>
+      </div>
+      <div class="stat-card wide">
+        <div class="stat-label">Weekly</div>
+        <div class="stat-value">${weekDone}<span class="stat-of">/${weekTotal}</span></div>
+        <div class="stat-sub">${weekPct}% of this week's tasks completed</div>
+        <div class="day-stats">${dayRows}</div>
       </div>
     `;
     listEl.appendChild(wrap);
@@ -1792,12 +1845,16 @@
     let startX = 0, startY = 0;
     let armed = false;
     let moved = false;
+    let manualScrolling = false;
+    let lastY = 0;
 
     contentEl.addEventListener('pointerdown', (e) => {
       startX = e.clientX;
       startY = e.clientY;
+      lastY = e.clientY;
       moved = false;
       armed = false;
+      manualScrolling = false;
       timer = setTimeout(() => {
         if (!moved) {
           armed = true;
@@ -1809,18 +1866,27 @@
     contentEl.addEventListener('pointermove', (e) => {
       const dx = Math.abs(e.clientX - startX);
       const dy = Math.abs(e.clientY - startY);
-      if (!armed && (dx > 10 || dy > 10)) {
+      if (!armed && !moved && (dx > 12 || dy > 12)) {
         moved = true;
         if (timer) { clearTimeout(timer); timer = null; }
+        if (dy > dx) {
+          manualScrolling = true;
+        }
       }
-    });
+      if (manualScrolling) {
+        listEl.scrollTop += (lastY - e.clientY);
+      }
+      lastY = e.clientY;
+    }, { passive: true });
 
     contentEl.addEventListener('pointerup', () => {
       if (timer) { clearTimeout(timer); timer = null; }
+      manualScrolling = false;
     });
 
     contentEl.addEventListener('pointercancel', () => {
       if (timer) { clearTimeout(timer); timer = null; }
+      manualScrolling = false;
     });
   }
 
