@@ -1056,7 +1056,6 @@
         <div class="settings-label">Language</div>
         <div class="option-row" id="languageOptions">
           <button class="option-chip active" data-lang="en">English</button>
-          <button class="option-chip disabled" data-lang="es">Español</button>
           <button class="option-chip disabled" data-lang="pt">Português</button>
         </div>
       </div>
@@ -1687,6 +1686,10 @@
     }
   }
 
+  function setActiveTab(viewName) {
+    tabsEl.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.view === viewName));
+  }
+
   tabsEl.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
       currentView = tab.dataset.view;
@@ -2032,9 +2035,61 @@
     setTimeout(() => { splash.style.display = 'none'; }, 600);
   });
 
-  backBtn.addEventListener('click', () => {
-    splash.style.display = 'flex';
-    requestAnimationFrame(() => splash.classList.remove('leaving'));
+  function stepBackOneLevel() {
+    if (currentView === 'dashboard') {
+      currentView = 'weekly';
+      weeklySelectedDay = null;
+      setActiveTab('weekly');
+      render();
+      return true;
+    }
+    if (currentView === 'weekly') {
+      if (weeklySelectedDay !== null) {
+        weeklySelectedDay = null;
+        render();
+        return true;
+      }
+      currentView = 'today';
+      todaySelectedFolder = null;
+      folderDashboardView = false;
+      setActiveTab('today');
+      render();
+      return true;
+    }
+    if (currentView === 'today') {
+      if (todaySelectedFolder !== null) {
+        todaySelectedFolder = null;
+        folderDashboardView = false;
+        render();
+        return true;
+      }
+      splash.style.display = 'flex';
+      requestAnimationFrame(() => splash.classList.remove('leaving'));
+      return true;
+    }
+    return false;
+  }
+
+  backBtn.addEventListener('click', stepBackOneLevel);
+
+  function isSplashVisible() {
+    return splash.style.display !== 'none' && !splash.classList.contains('leaving');
+  }
+
+  function handleHardwareBack() {
+    if (backdrop.classList.contains('open')) { closeCompose(); return true; }
+    if (settingsBackdrop.classList.contains('open')) { closeSettings(); return true; }
+    if (folderBackdrop.classList.contains('open')) { closeFolderCompose(); return true; }
+    if (isSplashVisible()) { return false; }
+    return stepBackOneLevel();
+  }
+
+  history.pushState(null, '', location.href);
+  window.addEventListener('popstate', () => {
+    const handled = handleHardwareBack();
+    if (handled) {
+      history.pushState(null, '', location.href);
+    }
   });
 
   fab.addEventListener('click', () => {
