@@ -1234,6 +1234,13 @@
 
   .task-block {
     border-bottom: 1px solid var(--line);
+    transition: opacity 0.15s ease;
+  }
+  .task-block.task-dragging {
+    opacity: 0.32;
+  }
+  .task-block.task-dragging .task {
+    background: var(--panel-hi);
   }
   .task {
     display: flex;
@@ -2179,9 +2186,10 @@
   }
 
   function buildTaskRow(task, options) {
-    const draggable = options && options.draggable;
     const block = document.createElement('div');
     block.className = 'task-block';
+    block.dataset.taskId = task.id;
+    if (task.id === dragActiveTaskId) block.classList.add('task-dragging');
 
     const row = document.createElement('div');
     row.className = 'task' + (task.done ? ' done' : '');
@@ -2215,9 +2223,7 @@
       if (justDragged) { justDragged = false; return; }
       openCompose('edit', task);
     });
-    if (draggable) {
-      attachDragHandlers(content, task);
-    }
+    attachDragHandlers(content, task);
 
     const actions = document.createElement('div');
     actions.className = 'actions';
@@ -2461,7 +2467,7 @@
         emptyEl.style.display = 'block';
       } else {
         emptyEl.style.display = 'none';
-        unfiled.forEach(t => listEl.appendChild(buildTaskRow(t, { draggable: folders.length > 0 })));
+        unfiled.forEach(t => listEl.appendChild(buildTaskRow(t)));
       }
       return;
     }
@@ -2482,7 +2488,7 @@
       emptyEl.style.display = 'block';
     } else {
       emptyEl.style.display = 'none';
-      folderTasks.forEach(t => listEl.appendChild(buildTaskRow(t, { draggable: true })));
+      folderTasks.forEach(t => listEl.appendChild(buildTaskRow(t)));
     }
   }
 
@@ -2573,6 +2579,7 @@
   let dragGhost = null;
   let dragActiveTaskId = null;
   let dragOverCard = null;
+  let lastReorderKey = null;
 
   function moveTaskToFolder(taskId, folderId) {
     const t = tasks.find(x => x.id === taskId);
@@ -2594,12 +2601,38 @@
 
   function findDropTarget(x, y) {
     const el = document.elementFromPoint(x, y);
-    if (!el || !el.closest) return null;
+    if (!el || !el.closest) return { type: null };
     const folderCard = el.closest('.folder-card:not(.add-folder)');
-    if (folderCard) return folderCard;
+    if (folderCard) return { type: 'folder', el: folderCard };
     const backBtn = el.closest('.day-detail-back');
-    if (backBtn) return backBtn;
-    return null;
+    if (backBtn) return { type: 'unfile', el: backBtn };
+    const taskBlock = el.closest('.task-block');
+    if (taskBlock && taskBlock.dataset.taskId && taskBlock.dataset.taskId !== dragActiveTaskId) {
+      return { type: 'task', el: taskBlock };
+    }
+    return { type: null };
+  }
+
+  function performLiveReorder(overBlockEl, clientY) {
+    const overId = overBlockEl.dataset.taskId;
+    if (!overId || overId === dragActiveTaskId) return;
+    const draggedTask = tasks.find(t => t.id === dragActiveTaskId);
+    const overTask = tasks.find(t => t.id === overId);
+    if (!draggedTask || !overTask) return;
+    const siblings = getTaskSiblings(draggedTask);
+    if (!siblings.some(t => t.id === overId)) return;
+
+    const rect = overBlockEl.getBoundingClientRect();
+    const before = clientY < rect.top + rect.height / 2;
+    const key = overId + (before ? 'b' : 'a');
+    if (key === lastReorderKey) return;
+    lastReorderKey = key;
+
+    const idxDragged = tasks.indexOf(draggedTask);
+    tasks.splice(idxDragged, 1);
+    const idxOver = tasks.indexOf(overTask);
+    tasks.splice(before ? idxOver : idxOver + 1, 0, draggedTask);
+    render();
   }
 
   function onDragPointerMove(e) {
@@ -2610,12 +2643,20 @@
       dragGhost.style.top = e.clientY + 'px';
     }
     const target = findDropTarget(e.clientX, e.clientY);
-    if (target !== dragOverCard) {
-      clearDragOverHighlight();
-      if (target) {
-        const sq = target.classList.contains('day-detail-back') ? target : target.querySelector('.folder-square');
+    if (target.type === 'folder' || target.type === 'unfile') {
+      lastReorderKey = null;
+      if (target.el !== dragOverCard) {
+        clearDragOverHighlight();
+        const sq = target.type === 'unfile' ? target.el : target.el.querySelector('.folder-square');
         if (sq) sq.classList.add('drag-over');
-        dragOverCard = target;
+        dragOverCard = target.el;
+      }
+    } else {
+      clearDragOverHighlight();
+      if (target.type === 'task') {
+        performLiveReorder(target.el, e.clientY);
+      } else {
+        lastReorderKey = null;
       }
     }
   }
@@ -2625,25 +2666,31 @@
     document.removeEventListener('pointerup', onDragPointerUp);
     document.removeEventListener('pointercancel', onDragPointerUp);
 
+    const draggedId = dragActiveTaskId;
+    const draggedTask = tasks.find(t => t.id === draggedId);
     const target = findDropTarget(e.clientX, e.clientY);
     clearDragOverHighlight();
     if (dragGhost) {
       dragGhost.remove();
       dragGhost = null;
     }
-    if (target && dragActiveTaskId) {
-      if (target.classList.contains('day-detail-back')) {
-        moveTaskToFolder(dragActiveTaskId, null);
-      } else {
-        moveTaskToFolder(dragActiveTaskId, target.dataset.folderId);
-      }
-    }
     dragActiveTaskId = null;
+    lastReorderKey = null;
+
+    if (draggedTask && draggedTask.list === 'today' && target.type === 'unfile') {
+      moveTaskToFolder(draggedId, null);
+    } else if (draggedTask && draggedTask.list === 'today' && target.type === 'folder') {
+      moveTaskToFolder(draggedId, target.el.dataset.folderId);
+    } else {
+      saveTasks();
+      render();
+    }
     justDragged = true;
   }
 
   function beginDrag(task, x, y) {
     dragActiveTaskId = task.id;
+    lastReorderKey = null;
     dragGhost = document.createElement('div');
     dragGhost.className = 'drag-ghost';
     dragGhost.textContent = task.title;
@@ -2656,6 +2703,7 @@
     document.addEventListener('pointercancel', onDragPointerUp);
 
     if (navigator.vibrate) navigator.vibrate(15);
+    render();
   }
 
   function attachDragHandlers(contentEl, task) {
@@ -2706,6 +2754,13 @@
       if (timer) { clearTimeout(timer); timer = null; }
       manualScrolling = false;
     });
+  }
+
+  function getTaskSiblings(task) {
+    if (task.list === 'weekly') {
+      return tasks.filter(t => t.list === 'weekly' && isSameDay(t.createdAt, task.createdAt));
+    }
+    return tasks.filter(t => t.list === 'today' && (t.folderId || null) === (task.folderId || null));
   }
 
   function toggleTask(id) {
