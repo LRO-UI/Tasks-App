@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
 <title>Tasks</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#0e0d0b">
@@ -1445,15 +1445,16 @@
     position: absolute;
     left: 0;
     right: 0;
-    bottom: 0;
+    bottom: var(--kb, 0px);
     z-index: 9;
     background: var(--panel-hi);
     border-top: 3px solid transparent;
     border-image: linear-gradient(90deg, var(--magenta), var(--orange)) 1;
     border-radius: 5vw 5vw 0 0;
     padding: 2.4vh 6vw calc(3vh + env(safe-area-inset-bottom));
-    max-height: 80vh;
+    max-height: min(80vh, calc(var(--vvh, 100vh) - 4vh));
     overflow-y: auto;
+    overscroll-behavior: contain;
     transform: translateY(110%);
     transition: transform 0.3s cubic-bezier(.4,0,.2,1);
   }
@@ -1596,6 +1597,46 @@
     margin: 0 0 2.6vh;
   }
   #folderDeleteView[hidden], #folderEditView[hidden], #folderDeleteBtn[hidden] { display: none; }
+
+  .export-btn {
+    display: block;
+    width: 100%;
+    padding: 1.6vh 4vw;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    color: var(--cream);
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 600;
+    font-size: 3.6vw;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .export-btn:active { transform: scale(0.98); }
+  .export-btn:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
+  .export-note {
+    font-size: 3.2vw;
+    color: var(--muted);
+    margin: 1.2vh 0 0;
+  }
+
+  .clear-week-btn {
+    display: block;
+    width: 100%;
+    margin-top: 3.2vh;
+    padding: 1.6vh 4vw;
+    background: none;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    color: #e5484d;
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 600;
+    font-size: 3.6vw;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .clear-week-btn:active { transform: scale(0.98); }
+  .clear-week-btn:focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; }
 
   /* ---------- SETTINGS PANEL ---------- */
   .settings-section { margin-bottom: 3.2vh; }
@@ -1815,6 +1856,17 @@
       </div>
     </div>
 
+    <div id="clearWeekBackdrop" class="sheet-backdrop"></div>
+    <div id="clearWeekPanel" class="sheet-panel" role="alertdialog" aria-labelledby="clearWeekHeading" aria-describedby="clearWeekText">
+      <div id="clearWeekHeading" class="compose-heading">Clear the weekly list?</div>
+      <p id="clearWeekText" class="delete-warning"></p>
+      <p class="delete-warning-note">This can't be undone.</p>
+      <div class="compose-actions">
+        <button id="clearWeekCancel" class="ghost-btn">Keep tasks</button>
+        <button id="clearWeekConfirm" class="solid-btn danger-btn">Delete all</button>
+      </div>
+    </div>
+
     <div id="settingsBackdrop" class="sheet-backdrop"></div>
     <div id="settingsPanel" class="sheet-panel">
       <div class="compose-heading">Settings</div>
@@ -1875,6 +1927,12 @@
             <span>More soon</span>
           </button>
         </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-label">Export</div>
+        <button id="exportTasksBtn" class="export-btn">Export all tasks</button>
+        <p id="exportNote" class="export-note">Saves a .txt file with your Today, folder and weekly tasks. Opens in Notepad or any text app.</p>
       </div>
 
       <div class="compose-actions">
@@ -2175,6 +2233,14 @@
 
   const WEEKDAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
+  function weekdayIndex(ts) {
+    return (new Date(ts).getDay() + 6) % 7;
+  }
+
+  function isSameWeekday(ts1, ts2) {
+    return weekdayIndex(ts1) === weekdayIndex(ts2);
+  }
+
   function getCurrentWeekDays() {
     const now = new Date();
     const dow = now.getDay(); // 0 = Sunday
@@ -2300,7 +2366,7 @@
     grid.className = 'week-grid';
 
     days.forEach(dayTs => {
-      const dayTasks = tasks.filter(t => t.list === 'weekly' && isSameDay(t.createdAt, dayTs));
+      const dayTasks = tasks.filter(t => t.list === 'weekly' && isSameWeekday(t.createdAt, dayTs));
       const done = dayTasks.filter(t => t.done).length;
 
       const card = document.createElement('button');
@@ -2324,7 +2390,64 @@
     });
 
     listEl.appendChild(grid);
+
+    const weekCount = getCurrentWeekTasks().length;
+    if (weekCount > 0) {
+      const clearBtn = document.createElement('button');
+      clearBtn.className = 'clear-week-btn';
+      clearBtn.textContent = 'Clear all weekly tasks';
+      clearBtn.addEventListener('click', openClearWeek);
+      listEl.appendChild(clearBtn);
+    }
   }
+
+  function getCurrentWeekTasks() {
+    return tasks.filter(t => t.list === 'weekly');
+  }
+
+  const clearWeekBackdrop = document.getElementById('clearWeekBackdrop');
+  const clearWeekPanel = document.getElementById('clearWeekPanel');
+  const clearWeekText = document.getElementById('clearWeekText');
+  const clearWeekCancel = document.getElementById('clearWeekCancel');
+  const clearWeekConfirm = document.getElementById('clearWeekConfirm');
+
+  function openClearWeek() {
+    const weekTasks = getCurrentWeekTasks();
+    const count = weekTasks.length;
+    if (!count) return;
+    const doneCount = weekTasks.filter(t => t.done).length;
+    const openCount = count - doneCount;
+    const taskWord = count === 1 ? 'task' : 'tasks';
+    let detail = '';
+    if (openCount > 0) {
+      detail = openCount === count
+        ? ' None of them are done yet.'
+        : ` ${openCount} of them ${openCount === 1 ? 'is' : 'are'} not done yet.`;
+    }
+    clearWeekText.textContent = `All ${count} ${taskWord} on the weekly list will be deleted, including their steps.${detail}`;
+    clearWeekConfirm.textContent = `Delete ${count} ${taskWord}`;
+    clearWeekBackdrop.classList.add('open');
+    clearWeekPanel.classList.add('open');
+    setTimeout(() => clearWeekCancel.focus(), 250);
+  }
+
+  function closeClearWeek() {
+    clearWeekBackdrop.classList.remove('open');
+    clearWeekPanel.classList.remove('open');
+  }
+
+  function clearCurrentWeek() {
+    const ids = new Set(getCurrentWeekTasks().map(t => t.id));
+    tasks = tasks.filter(t => !ids.has(t.id));
+    ids.forEach(id => expandedIds.delete(id));
+    closeClearWeek();
+    render();
+    saveTasks();
+  }
+
+  clearWeekBackdrop.addEventListener('click', closeClearWeek);
+  clearWeekCancel.addEventListener('click', closeClearWeek);
+  clearWeekConfirm.addEventListener('click', clearCurrentWeek);
 
   function renderDayDetail(dayTs) {
     listEl.innerHTML = '';
@@ -2342,7 +2465,7 @@
     header.appendChild(title);
     listEl.appendChild(header);
 
-    const dayTasks = tasks.filter(t => t.list === 'weekly' && isSameDay(t.createdAt, dayTs));
+    const dayTasks = tasks.filter(t => t.list === 'weekly' && isSameWeekday(t.createdAt, dayTs));
     if (dayTasks.length === 0) {
       emptyEl.textContent = 'No tasks recorded for this day.';
       emptyEl.style.display = 'block';
@@ -2758,7 +2881,7 @@
 
   function getTaskSiblings(task) {
     if (task.list === 'weekly') {
-      return tasks.filter(t => t.list === 'weekly' && isSameDay(t.createdAt, task.createdAt));
+      return tasks.filter(t => t.list === 'weekly' && isSameWeekday(t.createdAt, task.createdAt));
     }
     return tasks.filter(t => t.list === 'today' && (t.folderId || null) === (task.folderId || null));
   }
@@ -2952,6 +3075,7 @@
     if (backdrop.classList.contains('open')) { closeCompose(); return true; }
     if (settingsBackdrop.classList.contains('open')) { closeSettings(); return true; }
     if (folderBackdrop.classList.contains('open')) { closeFolderCompose(); return true; }
+    if (clearWeekBackdrop.classList.contains('open')) { closeClearWeek(); return true; }
     if (isSplashVisible()) { return false; }
     return stepBackOneLevel();
   }
@@ -3648,6 +3772,108 @@
     settingsBackdrop.classList.remove('open');
     settingsPanel.classList.remove('open');
   }
+
+  function formatTaskLines(t, indent) {
+    const pad = indent || '';
+    const lines = [`${pad}[${t.done ? 'x' : ' '}] ${t.title}`];
+    if (t.description) {
+      t.description.split(/\r?\n/).forEach(l => lines.push(`${pad}    ${l}`));
+    }
+    (t.subtasks || []).forEach(st => {
+      lines.push(`${pad}    [${st.done ? 'x' : ' '}] ${st.title}`);
+    });
+    return lines;
+  }
+
+  function section(title, list, emptyText) {
+    const done = list.filter(t => t.done).length;
+    const out = [title + (list.length ? `  (${done}/${list.length} done)` : ''), '-'.repeat(title.length)];
+    if (!list.length) out.push(emptyText);
+    else list.forEach(t => out.push(...formatTaskLines(t)));
+    out.push('');
+    return out;
+  }
+
+  function buildExportText() {
+    const now = new Date();
+    const lines = [
+      'TASKS',
+      `Exported ${now.toLocaleDateString('en', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}, ${now.toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' })}`,
+      '[x] done   [ ] not done',
+      '',
+      ''
+    ];
+
+    const today = tasks.filter(t => t.list === 'today' && !t.folderId);
+    lines.push(...section('TODAY', today, 'No tasks.'));
+    lines.push('');
+
+    lines.push('FOLDERS', '=======');
+    if (!folders.length) {
+      lines.push('No folders.', '');
+    } else {
+      lines.push('');
+      folders.forEach(f => {
+        lines.push(...section(f.name, tasks.filter(t => t.list === 'today' && t.folderId === f.id), 'No tasks.'));
+      });
+    }
+    lines.push('');
+
+    lines.push('WEEKLY', '======', '');
+    WEEKDAY_NAMES.forEach((name, i) => {
+      const dayList = tasks.filter(t => t.list === 'weekly' && weekdayIndex(t.createdAt) === i);
+      lines.push(...section(name, dayList, 'No tasks.'));
+    });
+
+    return lines.join('\r\n');
+  }
+
+  function exportTasks() {
+    const text = buildExportText();
+    const d = new Date();
+    const stamp = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const blob = new Blob(['\uFEFF' + text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `tasks-${stamp}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    exportTasksBtn.textContent = 'Exported';
+    setTimeout(() => { exportTasksBtn.textContent = 'Export all tasks'; }, 2000);
+  }
+
+  const exportTasksBtn = document.getElementById('exportTasksBtn');
+  exportTasksBtn.addEventListener('click', exportTasks);
+
+  // Keyboard handling: lift bottom sheets above the on-screen keyboard
+  function syncKeyboardOffset() {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const kb = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+    const rootStyle = document.documentElement.style;
+    rootStyle.setProperty('--kb', kb + 'px');
+    rootStyle.setProperty('--vvh', Math.round(vv.height) + 'px');
+  }
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', syncKeyboardOffset);
+    window.visualViewport.addEventListener('scroll', syncKeyboardOffset);
+    syncKeyboardOffset();
+  }
+
+  // Keep the focused field in view inside the sheet once the keyboard settles
+  document.querySelectorAll('.sheet-panel').forEach(panel => {
+    panel.addEventListener('focusin', (e) => {
+      const field = e.target;
+      if (!field.matches('input, textarea')) return;
+      setTimeout(() => {
+        syncKeyboardOffset();
+        field.scrollIntoView({ block: 'nearest' });
+      }, 300);
+    });
+  });
 
   settingsBtn.addEventListener('click', openSettings);
   settingsBackdrop.addEventListener('click', closeSettings);
