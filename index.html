@@ -3028,6 +3028,10 @@
     setTimeout(() => { splash.style.display = 'none'; }, 600);
   });
 
+  // Inside the tools site's window, open straight into the app like My Library does.
+  // The installed app and direct visits still start on the splash.
+  if (window.self !== window.top) splash.style.display = 'none';
+
   function stepBackOneLevel() {
     if (currentView === 'dashboard') {
       currentView = 'weekly';
